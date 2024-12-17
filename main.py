@@ -5,18 +5,10 @@ import argparse
 
 
 def split_luhmann_parts(input_string):
-    """
-    Splits a Luhmann-style string into parts of alternating numeric and alphabetic segments.
-    Example: '1a2b3cc42a' -> ['1', 'a', '2', 'b', '3', 'cc', '42', 'a']
-    """
     return re.findall(r'\d+|[a-z]+', input_string)
 
 
 def convert_numeric_to_alpha(n):
-    """
-    Converts a number to its alphabetic representation.
-    Example: 1 -> 'a', 2 -> 'b', 27 -> 'aa'
-    """
     result = []
     while n > 0:
         n -= 1
@@ -26,10 +18,6 @@ def convert_numeric_to_alpha(n):
 
 
 def convert_alpha_to_numeric(s):
-    """
-    Converts an alphabetic string to its numeric representation.
-    Example: 'a' -> 1, 'b' -> 2, 'aa' -> 27
-    """
     result = 0
     for char in s:
         result = result * 26 + (ord(char) - 96)
@@ -37,71 +25,78 @@ def convert_alpha_to_numeric(s):
 
 
 def check_and_convert(parts):
-    """
-    Checks for consecutive same-type elements in the parts list.
-    If found, it processes the remaining elements using a custom logic.
-    """
     for i in range(len(parts) - 1):
         if parts[i].isdigit() and parts[i + 1].isdigit():
-            # print(f"Consecutive numeric elements found: {parts[i]} and {parts[i + 1]}")
-            converted = convert_numeric_to_alpha(int(parts[i+1]))
-            parts = parts[:i+1] + [converted] + parts[i+2:]
-
+            converted = convert_numeric_to_alpha(int(parts[i + 1]))
+            parts = parts[:i + 1] + [converted] + parts[i + 2:]
         elif parts[i].isalpha() and parts[i + 1].isalpha():
-            # print(f"Consecutive alphabetic elements found: {parts[i]} and {parts[i + 1]}")
-            converted = convert_alpha_to_numeric(parts[i+1])
-            parts = parts[:i+1] + [str(converted)] + parts[i+2:]
-    return parts 
+            converted = convert_alpha_to_numeric(parts[i + 1])
+            parts = parts[:i + 1] + [str(converted)] + parts[i + 2:]
+    return parts
 
 
-
-def rename_luhmann_files(source_prefix, target_prefix, directory):
+def update_references(directory, old_file, new_file):
     """
-    Renames files in the given directory from source_prefix to target_prefix while ensuring
-    Luhmann-style validity.
+    Updates references to the old Luhmann ID with the new one in all .md files within the directory.
+    """
+    for file_path in Path(directory).glob("**/*.md"):  # Only process .md files
+        if file_path.is_file():
+            with open(file_path, "r", encoding="latin-1") as file:
+                content = file.read()
+            
+            # Replace old ID with new ID in file content
+            updated_content = content.replace(old_file, new_file)
+            
+            # If any replacements were made, write back the updated content
+            if content != updated_content:
+                print(f"Updating references in: {file_path}")
+                with open(file_path, "w", encoding="latin-1") as file:
+                    file.write(updated_content)
+
+
+def change_file_id(source_prefix, target_prefix, directory):
+    """
+    Changes the Luhmann-style ID of files in the directory from source_prefix to target_prefix.
+    For example '1a 2b 3c 4d.md' -> '1a 2b 3c 5e.md' if source_prefix='4d' and target_prefix='5e'.
     """
     for file_path in Path(directory).glob(f"{source_prefix}*"):
         if file_path.is_file():
-            # Extract the file name
-            file_name = file_path.name
+            source_file_name = file_path.name
+            file_id = source_file_name.split(' ', 1)[0].strip()
 
-            # Extract the luhman id (1a2c title) => split by space
-            id = file_name.split(' ', 1)[0].strip()
+            file_id_parts = split_luhmann_parts(file_id)
+            source_id_parts = split_luhmann_parts(source_prefix)
+            target_id_parts = split_luhmann_parts(target_prefix)
 
-            # Split the id into parts
-            parts = split_luhmann_parts(id)
-            # print(f"Parts: {parts}")
+            file_id_parts = file_id_parts[len(source_id_parts):]
+            constructed_id_parts = target_id_parts + file_id_parts
+            constructed_id_parts = check_and_convert(constructed_id_parts)
 
-            # Split the target id into parts
-            target_parts = split_luhmann_parts(target_prefix)
-            # print(f"Target Parts: {target_parts}")
+            new_file_name = ''.join(constructed_id_parts) + source_file_name[len(file_id):]
 
-            # remove first elements of parts with length of source_prefix
-            parts = parts[len(source_prefix):]
-            # print(f"Parts after removing: {parts}")
+            rename_files_and_update_references(directory, source_file_name, new_file_name)
 
-            # append target_parts to parts
-            parts = target_parts + parts
-            # print(f"Parts after appending: {parts}")
+def rename_files_and_update_references(directory, old_file_name, new_file_name):
+    """
+    Renames the old file to the new file and updates references to the old file in all .md files within the directory.
+    """
+    old_file_path = Path(directory) / old_file_name
+    new_file_path = Path(directory) / new_file_name
 
-            # Check and convert parts
-            parts = check_and_convert(parts)
-            # print(f"Parts after conversion: {parts}")
+    if not old_file_path.is_file():
+        print(f"Error: File '{old_file_name}' does not exist in the directory.")
+        exit(1)
+    print(f"Renaming: {old_file_path} -> {new_file_path}")
 
-            # Reconstruct the new file name
-            new_file_name = ''.join(parts) + file_name[len(id):]
-            # print(f"new file name: {new_file_name}")
+    old_file_path.rename(new_file_path)
 
-            # Combine the new file name with the directory
-            new_file_name = file_path.parent / new_file_name
-            # print(f"new file name with path: {new_file_name}")
+    # Update references to the old file name
+    print(f"Updating references from {old_file_name[:-3]} to {new_file_name[:-3]} in: {directory}")
+    update_references(directory, old_file_name[:-3], new_file_name[:-3])
+    
 
-            # Rename the file
-            print(f"Renaming: {file_path} -> {new_file_name}")
-            file_path.rename(new_file_name)
 
 def main():
-    # Set up command-line arguments
     parser = argparse.ArgumentParser(
         description="Rename files in a directory using Luhmann-style numbering."
     )
@@ -115,18 +110,15 @@ def main():
         "directory", type=str, help="The directory containing the files to rename."
     )
 
-    # Parse arguments
     args = parser.parse_args()
-
-    # Validate the directory
     directory_path = Path(args.directory)
     if not directory_path.is_dir():
         print(f"Error: Directory '{args.directory}' does not exist.")
         exit(1)
 
-    # Perform renaming
-    rename_luhmann_files(args.source_prefix, args.target_prefix, args.directory)
+    change_file_id(args.source_prefix, args.target_prefix, args.directory)
 
 
 if __name__ == "__main__":
     main()
+
